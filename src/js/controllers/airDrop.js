@@ -2,10 +2,8 @@
 var Mnemonic = require("bitcore-mnemonic");
 var Bitcore = require("bitcore-lib");
 var objectHash = require('trustnote-common/object_hash.js');
-// var device = require('trustnote-common/device.js');
 var breadcrumbs = require('trustnote-common/breadcrumbs.js');
 var constants = require('trustnote-common/constants.js');
-// var chatStorage = require('trustnote-common/chat_storage.js');
 var eventBus = require('trustnote-common/event_bus.js');
 
 angular.module('copayApp.controllers').controller('airDrop', function ($scope, $rootScope, go, profileService,$timeout,gettext, gettextCatalog,isCordova,configService,storageService,nodeWebkit,uxLanguage) {
@@ -15,6 +13,7 @@ angular.module('copayApp.controllers').controller('airDrop', function ($scope, $
 	var configWallet = config.wallet;
 	var walletSettings = configWallet.settings;
 	var crypto = require("crypto");
+	var db = require('trustnote-common/db.js');
 
 	self.unitValue = walletSettings.unitValue;
 	self.bbUnitValue = walletSettings.bbUnitValue;
@@ -55,20 +54,7 @@ angular.module('copayApp.controllers').controller('airDrop', function ($scope, $
 			self.candyTokenArr[i] = crypto.randomBytes(32).toString('base64').substr(0,16);
 
 		}
-	}
-
-	storageService.getCandySendHistory(function (err,val) {
-		if(val){
-			self.candyHistoryList = (JSON.parse(val)).data;
-		}
-	})
-
-	self.showHistory = function(index){
-		self.showSeedFlag = 'old';
-		self.showSeedList = true;
-		self.curentHistorySeed = self.candyHistoryList[index].seeds;
-		console.log(self.showSeedFlag,self.curentHistorySeed,index);
-	}
+	};
 
 	self.seedCopy = function (){
 		if(self.showSeedFlag == 'new'){
@@ -102,6 +88,9 @@ angular.module('copayApp.controllers').controller('airDrop', function ($scope, $
 			if(self.candyAmount <= 0){
 				self.amountWarring = true;
 				self.amountWarringMsg = gettextCatalog.getString('Invalid amount');
+			}else if(typeof(self.candyAmount) != 'number'){
+				self.amountWarring = true;
+				self.amountWarringMsg = gettextCatalog.getString('Invalid amount');
 			}else if(self.candyAmount > 200){
 				self.amountWarring = true;
 				self.amountWarringMsg = gettextCatalog.getString('Single T Code should less than 200');
@@ -113,6 +102,9 @@ angular.module('copayApp.controllers').controller('airDrop', function ($scope, $
 			if(self.redPacketCount < 1){
 				self.countWarring = true;
 				self.countWarringMsg = gettextCatalog.getString('You are naughty. Please send 1 at least ');
+			}else if(typeof(self.candyAmount) != 'number'){
+				self.amountWarring = true;
+				self.amountWarringMsg = gettextCatalog.getString('Invalid amount');
 			}else if(self.redPacketCount > 100){
 				self.countWarring = true;
 				self.countWarringMsg = gettextCatalog.getString('Maximum T Code number 100');
@@ -264,7 +256,7 @@ angular.module('copayApp.controllers').controller('airDrop', function ($scope, $
 						var signature = ecdsaSig.sign(text_to_sign, privKeyBuf);
 						cb(signature);
 						eventBus.once('apiTowalletHome', self.reCallApiToWalletHome);
-					}
+					};
 
 					self.callApiToWalletHome = function (account, is_change, address_index, text_to_sign, cb) {
 						var coin = (profileService.focusedClient.credentials.network == 'livenet' ? "0" : "1");
@@ -341,12 +333,31 @@ angular.module('copayApp.controllers').controller('airDrop', function ($scope, $
 								amount:(amount * redPacketCount/1000000),
 								time: CurentTime(),
 								seeds:self.candyTokenArr
-							})
-							storageService.setCandySendHistory(JSON.stringify({data:self.candyHistoryList}),function () {})
-							$timeout(function () {
-								self.submitAction = false;
-							},2000);
-							$rootScope.$emit("NewOutgoingTx");
+							});
+
+							var arrValues = [];
+							var walletId = profileService.focusedClient.credentials.walletId;
+							var creation_date = CurentTime();
+							for(var i = 0; i < self.candyTokenArr.length; i++) {
+								arrValues.push("('"+walletId+"','"+self.candyTokenArr[0]+"','"+self.candyTokenArr[i]+"',"+amount+","+0+",'"+creation_date+"')");
+							}
+							var strValues = arrValues.join(",");
+							//console.log(strValues);
+
+							db.query("INSERT INTO tcode (wallet,num,code,amount,is_spent,creation_date) values" + strValues, function () {
+								$timeout(function () {
+									self.gened = 1;
+								},10);
+								$timeout(function () {
+									self.submitAction = false;
+									self.gened = 0;
+								},3000);
+
+
+								$rootScope.$emit("NewOutgoingTx");
+							});
+
+
 						}
 
 					});
@@ -411,6 +422,7 @@ angular.module('copayApp.controllers').controller('airDrop', function ($scope, $
 
 		var hh = now.getHours();            //时
 		var mm = now.getMinutes();          //分
+		var ss = now.getSeconds();
 
 		var clock = year + "-";
 
@@ -429,7 +441,60 @@ angular.module('copayApp.controllers').controller('airDrop', function ($scope, $
 
 		clock += hh + ":";
 		if (mm < 10) clock += '0';
-		clock += mm;
+		clock += mm + ":";
+		if(ss < 10) clock += '0';
+		clock += ss;
 		return clock;
 	}
+
+	// 历史记录发红包列表 ####### ####### ####### ####### ####### ####### ####### ####### ####### ####### #######
+	self.getHistoryList = function () {
+		var fcWalletId = profileService.focusedClient.credentials.walletId;
+		db.query("SELECT wallet,num,sum(amount) as amount,creation_date from tcode where wallet='"+fcWalletId+"' GROUP BY num ORDER BY creation_date DESC;", function (rows) {
+			self.recordsList = rows;
+			$timeout(function () {
+				$scope.$apply();
+			}, 100);
+		});
+	};
+	self.getHistoryList();
+
+	// 点击进入相应 T 口令的详细信息
+	self.clicked = function (num) {
+		var txId = self.recordsList[num].num;
+		db.query("SELECT wallet,num,amount,code,creation_date from tcode where num='"+txId+"' ORDER BY creation_date DESC;", function (rows) {
+			self.detileList = rows;
+			$timeout(function () {
+				$scope.$apply();
+			}, 100);
+		});
+	};
+	// 点击复制 T 口令
+	self.copyall = function () {
+		var temArr = [];
+		for(var i = 0; i < self.detileList.length; i++){
+			temArr.push(self.detileList[i].code);
+		}
+		self.copyedToBoard = temArr.join('   ');
+		if (isCordova) {
+			window.cordova.plugins.clipboard.copy(self.copyedToBoard);
+			$timeout(function() {
+				self.showCopied = 1;
+				$scope.$apply()
+			}, 10);
+			$timeout(function () {
+				self.showCopied = 0;
+			}, 1500)
+		}else if (nodeWebkit.isDefined()) {
+			nodeWebkit.writeToClipboard(self.copyedToBoard);
+			$timeout(function() {
+				self.showCopied = 1;
+				$scope.$apply()
+			}, 10);
+			$timeout(function () {
+				self.showCopied = 0;
+			}, 1500)
+		}
+	}
+
 });
