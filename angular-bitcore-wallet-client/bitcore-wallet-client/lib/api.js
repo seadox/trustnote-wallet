@@ -531,8 +531,8 @@ API.prototype.sendMultiPayment = function (opts, cb) {
 			}
 			if(sigtemp != sig)
 				sigtemp= sig;
-			else
-				return;
+			// else
+			// 	return;
 			if(sig && typeof(handleSig) == "function" ){
 				handleSig(sig);
 			}
