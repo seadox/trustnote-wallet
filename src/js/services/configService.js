@@ -58,9 +58,9 @@ angular.module('copayApp.services').factory('configService', function (storageSe
 	};
 
 	root.hub = [
-		'119.28.27.234:6616'
+		'119.28.129.13:6616'
 	]
-	root.stableHub = '119.28.27.234:6616';
+	root.stableHub = '119.28.129.13:6616';
 	// 钱包默认配置
 	var defaultConfig = {
 		// wallet limits
