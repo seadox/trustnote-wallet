@@ -156,9 +156,9 @@ angular.module('copayApp.controllers').controller('recoveryFromSeeddir', functio
 	function removeAddressesAndWallets(cb) {
 		var arrQueries = [];
 		db.addQuery(arrQueries, "DELETE FROM pending_shared_address_signing_paths");
-		db.addQuery(arrQueries, "DELETE FROM shared_address_signing_paths");
+		//db.addQuery(arrQueries, "DELETE FROM shared_address_signing_paths");
 		db.addQuery(arrQueries, "DELETE FROM pending_shared_addresses");
-		db.addQuery(arrQueries, "DELETE FROM shared_addresses");
+		//db.addQuery(arrQueries, "DELETE FROM shared_addresses");
 		db.addQuery(arrQueries, "DELETE FROM my_addresses");
 		db.addQuery(arrQueries, "DELETE FROM wallet_signing_paths");
 		db.addQuery(arrQueries, "DELETE FROM extended_pubkeys");
