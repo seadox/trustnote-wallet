@@ -758,7 +758,8 @@ angular.module('copayApp.controllers').controller('walletHomeController', functi
 					var walletDefinedByKeys = require('trustnote-common/wallet_defined_by_keys.js');
 					var my_address;
 
-					walletDefinedByKeys.issueNextAddress(fc.credentials.walletId, 0, function (addressInfo) {  // never reuse addresses as the required output could be already present
+					//walletDefinedByKeys.issueNextAddress(fc.credentials.walletId, 0, function (addressInfo) {  // never reuse addresses as the required output could be already present
+					walletDefinedByKeys.issueOrSelectNextAddress(fc.credentials.walletId, 0, function (addressInfo) {  // Victor ShareAddress  
 						my_address = addressInfo.address;
 						if (self.binding.type === 'reverse_payment') {
 							var arrSeenCondition = ['seen', {
@@ -994,7 +995,7 @@ angular.module('copayApp.controllers').controller('walletHomeController', functi
 								});
 
 								// issue next address to avoid reusing the reverse payment address
-								walletDefinedByKeys.issueNextAddress(fc.credentials.walletId, 0, function () {});
+								//walletDefinedByKeys.issueNextAddress(fc.credentials.walletId, 0, function () {}); // Victor ShareAddress  
 							}
 						}else{ // redirect to history
 							$rootScope.$emit('Local/SetTab', 'walletHome');
