@@ -58,8 +58,10 @@ angular.module('copayApp.services').factory('configService', function (storageSe
 	};
 
 	root.hub = [
+		//'127.0.0.1:6618',
 		'119.28.129.13:6616'
 	]
+	//root.stableHub = '127.0.0.1:6618';
 	root.stableHub = '119.28.129.13:6616';
 	// 钱包默认配置
 	var defaultConfig = {
