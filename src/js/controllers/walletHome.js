@@ -844,7 +844,7 @@ angular.module('copayApp.controllers').controller('walletHomeController', functi
 								self.setSendError(err);
 							},
 							ifOk: function (shared_address) {
-								composeAndSendShareAddress(shared_address, arrDefinition, assocSignersByPath);
+								composeAndSend(shared_address, arrDefinition, assocSignersByPath);
 							}
 						});
 					});
@@ -854,156 +854,7 @@ angular.module('copayApp.controllers').controller('walletHomeController', functi
 
 				// compose and send
 				// Victor ShareAddress  
-				function composeAndSendShareAddress(to_address, arrDefinition, assocSignersByPath) {
-					var arrSigningDeviceAddresses = []; // empty list means that all signatures are required (such as 2-of-2)
-
-					if (fc.credentials.m < fc.credentials.n)
-						$scope.index.copayers.forEach(function (copayer) {
-							if (copayer.me || copayer.signs)
-								arrSigningDeviceAddresses.push(copayer.device_address);
-						});
-					else if (indexScope.shared_address)
-						arrSigningDeviceAddresses = indexScope.copayers.map(function (copayer) {
-							return copayer.device_address;
-						});
-
-					breadcrumbs.add('sending payment in ' + asset);
-					profileService.bKeepUnlocked = true;
-
-					var opts = {
-						shared_address: indexScope.shared_address,
-						merkle_proof: merkle_proof,
-						asset: asset,
-						to_address: to_address,
-						amount: amount,
-						send_all: self.bSendAll,
-						arrSigningDeviceAddresses: arrSigningDeviceAddresses,
-						recipient_device_address: recipient_device_address,
-						arrDefinition: arrDefinition,                         // Victor ShareAddress 
-						assocSignersByPath: assocSignersByPath				  // Victor ShareAddress 
-					};
-					self.sendtoaddress = opts.to_address;
-					self.sendamount = opts.amount/1000000 + "MN";
-
-					var eventListeners = eventBus.listenerCount('apiTowalletHome');
-
-					self.reCallApiToWalletHome = function (account, is_change, address_index, text_to_sign, cb) {
-						var coin = (profileService.focusedClient.credentials.network == 'livenet' ? "0" : "1");
-						var path = "m/44'/" + coin + "'/" + account + "'/" + is_change + "/" + address_index;
-
-						var xPrivKey = new Bitcore.HDPrivateKey.fromString(profileService.focusedClient.credentials.xPrivKey);
-						var privateKey = xPrivKey.derive(path).privateKey;
-						var privKeyBuf = privateKey.bn.toBuffer({size: 32});
-						var signature = ecdsaSig.sign(text_to_sign, privKeyBuf);
-						cb(signature);
-						eventBus.once('apiTowalletHome', self.reCallApiToWalletHome);
-					}
-
-					self.callApiToWalletHome = function (account, is_change, address_index, text_to_sign, cb) {
-						var coin = (profileService.focusedClient.credentials.network == 'livenet' ? "0" : "1");
-						var path = "m/44'/" + coin + "'/" + account + "'/" + is_change + "/" + address_index;
-
-						var obj = {
-							"type": "h2",
-							"sign": text_to_sign.toString("base64"),
-							"path": path,
-							"addr": opts.to_address,
-							"amount": opts.amount,
-							"v": Math.floor(Math.random()*9000+1000)
-						};
-						self.text_to_sign_qr = 'TTT:' + JSON.stringify(obj);
-						$timeout(function() {
-							profileService.tempNum2 = obj.v;
-							$scope.$apply();
-						}, 10);
-						eventBus.once('apiTowalletHome', self.callApiToWalletHome);
-
-						var finishListener = eventBus.listenerCount('finishScaned');
-						if(finishListener > 0) {
-							eventBus.removeAllListeners('finishScaned');
-						}
-						eventBus.once('finishScaned', function (signature) {
-							cb(signature);
-						});
-					};
-
-					if(eventListeners > 0) {
-						eventBus.removeAllListeners('apiTowalletHome');
-						if(fc.observed)
-							eventBus.once('apiTowalletHome', self.callApiToWalletHome);
-						else
-							eventBus.once('apiTowalletHome', self.reCallApiToWalletHome);
-					}
-					else {
-						if(fc.observed)
-							eventBus.once('apiTowalletHome', self.callApiToWalletHome);
-						else
-							eventBus.once('apiTowalletHome', self.reCallApiToWalletHome);
-					}
-
-
-					fc.sendMultiPayment(opts, function (err) {
-						indexScope.setOngoingProcess(gettext('sending'), false);  // if multisig, it might take very long before the callback is called
-						breadcrumbs.add('done payment in ' + asset + ', err=' + err);
-						delete self.current_payment_key;
-						profileService.bKeepUnlocked = false;
-
-						if (err) {
-							if (typeof err === 'object') {
-								err = JSON.stringify(err);
-								eventBus.emit('nonfatal_error', "error object from sendMultiPayment: " + err, new Error());
-							}
-							else if (err.match(/device address/))
-								err = "This is a private asset, please send it only by clicking links from chat";
-
-							else if (err.match(/no funded/))
-								err = gettextCatalog.getString('Not enough spendable funds') ;
-
-							else if (err.match(/connection closed/))
-								err = gettextCatalog.getString('[internal] connection closed') ;
-							else if (err.match(/one of the cosigners refused to sign/))
-								err = gettextCatalog.getString('one of the cosigners refused to sign') ;
-							else if (err.match(/funds from/))
-								err = err.substring(err.indexOf("from")+4, err.indexOf("for")) + gettextCatalog.getString(err.substr(0,err.indexOf("from"))) + gettextCatalog.getString(". It needs atleast ")  + parseInt(err.substring(err.indexOf("for")+3, err.length))/1000000 + "MN";
-							else if(err == "close") {
-								err = "suspend transaction.";
-							}
-							// 如果是 观察钱包
-							if(self.observed == 1){
-								$scope.index.showTitle = 1;
-								self.showTitle = 0;
-							}
-							return self.setSendError(err);
-						}
-
-						var binding = self.binding;
-						self.resetForm();
-						$rootScope.$emit("NewOutgoingTx");
-
-						if (recipient_device_address) {  // show payment in chat window
-							eventBus.emit('sent_payment', recipient_device_address, amount || 'all', asset, !!binding);
-							if (binding && binding.reverseAmount) { // create a request for reverse payment
-								if (!my_address)
-									throw Error('my address not known');
-								var paymentRequestCode = 'TTT:' + my_address + '?amount=' + binding.reverseAmount + '&asset=' + encodeURIComponent(binding.reverseAsset);
-								var paymentRequestText = '[reverse payment](' + paymentRequestCode + ')';
-								device.sendMessageToDevice(recipient_device_address, 'text', paymentRequestText);
-								var body = correspondentListService.formatOutgoingMessage(paymentRequestText);
-								correspondentListService.addMessageEvent(false, recipient_device_address, body);
-								device.readCorrespondent(recipient_device_address, function (correspondent) {
-									if (correspondent.my_record_pref && correspondent.peer_record_pref) chatStorage.store(correspondent.device_address, body, 0, 'html');
-								});
-
-								// issue next address to avoid reusing the reverse payment address
-								//walletDefinedByKeys.issueNextAddress(fc.credentials.walletId, 0, function () {}); // Victor ShareAddress  
-							}
-						}else{ // redirect to history
-							$rootScope.$emit('Local/SetTab', 'walletHome');
-						}
-
-					});
-				}
-				function composeAndSend(to_address) {
+				function composeAndSend(to_address, arrDefinition, assocSignersByPath) {
 					var arrSigningDeviceAddresses = []; // empty list means that all signatures are required (such as 2-of-2)
 
 					if (fc.credentials.m < fc.credentials.n)
@@ -1029,6 +880,12 @@ angular.module('copayApp.controllers').controller('walletHomeController', functi
 						arrSigningDeviceAddresses: arrSigningDeviceAddresses,
 						recipient_device_address: recipient_device_address
 					};
+					// Victor ShareAddress 
+					if (arrDefinition && assocSignersByPath){
+						opts.arrDefinition = arrDefinition;
+						opts.assocSignersByPath = assocSignersByPath;
+					}
+
 					self.sendtoaddress = opts.to_address;
 					self.sendamount = opts.amount/1000000 + "MN";
 
